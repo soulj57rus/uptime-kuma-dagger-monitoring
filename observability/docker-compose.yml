@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        cat << 'EOF' > /tmp/prometheus.yml
+        global:
+          scrape_interval: 15s
+
+        scrape_configs:
+          - job_name: 'prometheus'
+            static_configs:
+              - targets: ['localhost:9090']
+
+          - job_name: 'node-exporter'
+            static_configs:
+              - targets: ['node-exporter:9100']
+
+          - job_name: 'cadvisor'
+            static_configs:
+              - targets: ['cadvisor:8080']
+
+          - job_name: 'uptime-kuma'
+            metrics_path: '/metrics'
+            basic_auth:
+              username: 'api'
+              password: 'uk1_Yj3JwdID7kZUu_AVNZx1piTbIjFZAEBNYlHTRYmc'
+            static_configs:
+              - targets: ['uptime-kuma:3001']
+        EOF
+        exec /bin/prometheus --config.file=/tmp/prometheus.yml --storage.tsdb.path=/prometheus
+    ports:
+      - "9092:9090"
+    networks:
+      - kuma-network
+    restart: always
+
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: grafana
+    ports:
+      - "3005:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin_secure_pass
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - kuma-network
+    restart: always
+
+  node-exporter:
+    image: prom/node-exporter:v1.6.0
+    container_name: node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+    networks:
+      - kuma-network
+    restart: always
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: cadvisor
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - kuma-network
+    restart: always
+
+volumes:
+  grafana_data:
+
+networks:
+  kuma-network:
+    external: true
+    name: kuma-shared-network
+

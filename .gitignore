@@ -1,0 +1,11 @@
+# Dagger & Python cache
+.dagger/
+.cache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Docker volumes storage (если вдруг создались локально)
+*_data/
+.data/

@@ -1,0 +1,13 @@
+{
+  "name": "kuma-monitor",
+  "engineVersion": "v0.21.11",
+  "sdk": {
+    "source": "python"
+  },
+  "source": ".dagger",
+  "include": [
+    "app-db",
+    "observability",
+    ".dagger"
+  ]
+}

@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  kuma-db:
+    image: mariadb:10.11
+    container_name: kuma-db
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MARIADB_ROOT_PASSWORD: kuma_root_secure_pass
+      MARIADB_DATABASE: uptime_kuma
+      MARIADB_USER: kuma_user
+      MARIADB_PASSWORD: kuma_secure_pass
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - kuma-network
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h localhost -u kuma_user -pkuma_secure_pass || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    depends_on:
+      kuma-db:
+        condition: service_healthy
+    environment:
+      - UPTIME_KUMA_DB_TYPE=mariadb
+      - UPTIME_KUMA_DB_URL=mariadb://kuma_user:kuma_secure_pass@kuma-db:3306/uptime_kuma
+    ports:
+      - "3001:3001"
+    volumes:
+      - kuma_data:/app/data
+    networks:
+      - kuma-network
+    restart: always
+
+volumes:
+  mariadb_data:
+  kuma_data:
+
+networks:
+  kuma-network:
+    name: kuma-shared-network
+    driver: bridge
+
