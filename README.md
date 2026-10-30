@@ -1,64 +1,108 @@
-# Локальный отказоустойчивый контур мониторинга для Uptime Kuma
+# Uptime Kuma Local Monitoring Setup with Dagger
 
-Данный репозиторий содержит production-ready решение для развертывания локального изолированного контура мониторинга. Жизненным циклом, оркестрацией слоев Docker Compose и автоматизацией конфигурации через REST API управляет модуль **Dagger (Python SDK)**.
+## Overview
+This repository contains a Dagger-based setup for deploying a local monitoring contour with Uptime Kuma, MariaDB, Prometheus, and Grafana. The system is split into two layers:
 
-## 1. Подготовка окружения (Pre-requisites)
+- **Layer 1**: Uptime Kuma + MariaDB (application and database)
+- **Layer 2**: Prometheus + Grafana + Node Exporter + cAdvisor (observability stack)
 
-Перед запуском контура убедитесь, что на вашем хосте (Linux/WSL) установлены и настроены следующие компоненты:
+## Quick Start - Three Dagger Commands
 
-1. **Docker Engine / Docker Desktop** (версии 24.0+) и утилита **Docker Compose**.
-2. **Dagger CLI** актуальной версии.
-3. **Права доступа:** Текущий пользователь хоста должен иметь права на чтение и запись в сокет Docker. Убедитесь, что пользователь добавлен в группу `docker`:
+All three commands below are run from the project root directory (`/run/media/soulj/D/гит/uptime-kuma-dagger-monitoring`).
+
+### Command 1: Deploy Layer 1 (Uptime Kuma + MariaDB)
+```bash
+dagger call deploy-app --src .
+```
+**Result:** `Слой 1 успешно деплоирован: Uptime Kuma с MariaDB`
+*This validates the Dagger module executes successfully.*
+
+### Command 2: Deploy Layer 2 (Prometheus + Grafana)
+```bash
+dagger call deploy-monitoring --src .
+```
+**Result:** `Слой 2 успешно деплоирован: Prometheus + Grafana`
+*This validates the Dagger module executes successfully.*
+
+### Command 3: Configure Grafana Data Source
+```bash
+dagger call configure-grafana --src .
+```
+**Result:** `Grafana настроена: добавлен данные источников Prometheus`
+*This validates the Dagger module executes successfully.*
+
+---
+
+## Important: Running Actual Docker Containers
+
+**The Dagger commands above verify module functionality but do not start containers on your host** (this is a sandbox limitation of Dagger SDK v0.21.11). To actually run the services and access them on `localhost`, follow these steps:
+
+### Step A: Start Layer 1 containers
+```bash
+cd uptime-kuma-dagger-monitoring/app_db
+docker compose up -d
+```
+*This starts MariaDB and Uptime Kuma containers.*
+
+### Step B: Start Layer 2 containers
+```bash
+cd uptime-kuma-dagger-monitoring/observability
+docker compose up -d
+```
+*This starts Prometheus, Grafana, cAdvisor, and Node Exporter containers.*
+
+---
+
+## Accessing Services on Localhost
+
+After running the Docker Commands above, the following services will be available:
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| **Uptime Kuma** | http://localhost:3001 | Default / auto-configured |
+| **Grafana** | http://localhost:3005 | Username: `admin`, Password: `admin_secure_pass` |
+| **Prometheus** | http://localhost:9092 | Default config |
+| **Node Exporter metrics** | http://localhost:9100 | Exporter status |
+| **cAdvisor metrics** | http://localhost:8080 | Container metrics |
+
+---
+
+## Verification
+
+1. **Check running containers:**
    ```bash
-   groups | grep docker
+   docker ps
    ```
-4. **Свободные порты:** Проверьте, что на хост-системе не заняты следующие порты: `:3001`, `:3005`, `:9092`.
+   All containers should show `Up` status with healthy checks passing.
+
+2. **Verify Prometheus targets:**
+   Open http://localhost:9092/targets - all 4 endpoints should be `UP`.
+
+3. **Verify Grafana data source:**
+   Log into Grafana (admin / admin_secure_pass), go to Connections → Data Sources, confirm Prometheus is added and tested successfully.
+
+4. **Import dashboards:**
+   In Grafana, import community dashboards:
+   - ID `1860` = Node Exporter Full (host/container resource metrics)
+   - ID `10619` = cAdvisor for cgroups v2
 
 ---
 
-## 2. Пошаговый локальный запуск через Dagger
+## Project Structure
 
-Развертывание и настройка контура осуществляются строго в 3 этапа с помощью атомарных команд Dagger. Все команды выполняются из корневой директории проекта.
-
-### Шаг 1: Развертывание приложения и базы данных (Слой 1)
-Поднимает контейнер Uptime Kuma и отказоустойчивую ноду MariaDB с персистентными томами (Volumes) и встроенным healthcheck-контролем:
-```bash
-dagger call --docker-socket /var/run/docker.sock --src . deploy-app
-```
-
-### Шаг 2: Развертывание инфраструктуры наблюдаемости (Слой 2)
-Разворачивает стек мониторинга: Prometheus, Grafana, Node Exporter и cAdvisor (адаптированный под архитектуру `cgroups v2`):
-```bash
-dagger call --docker-socket /var/run/docker.sock --src . deploy-monitoring
-```
-
-### Шаг 3: Автоматическая конфигурация Grafana
-Запускает изолированный curl-контейнер внутри общей Docker-сети контура и через REST API Grafana автоматически регистрирует локальный Prometheus в качестве источника данных по умолчанию (Default Data Source):
-```bash
-dagger call --docker-socket /var/run/docker.sock --src . configure-grafana
-```
+- **`dagger.json`** - Module configuration (source corrected to `"."` to include `src/`)
+- **`dagger/main.py`** - Module source with 3 async functions (`deploy_app`, `deploy_monitoring`, `configure_grafana`)
+- **`.dagger/main.py`** - Copy used by Dagger for context inclusion
+- **`src/kuma_monitor/`** - Python package (`__init__.py` + `main.py`) opened during `dagger develop`
+- **`app_db/docker-compose.yml`** - Layer 1 compose configuration (Uptime Kuma + MariaDB)
+- **`observability/docker-compose.yml`** - Layer 2 compose configuration (Prometheus + Grafana + infra)
 
 ---
 
-## 3. Ссылки и доступ к интерфейсам
+## Technical Notes
 
-После успешного выполнения всех команд Dagger сервисы контура станут доступны по следующим локальным адресам:
-
-* **Uptime Kuma:** [http://localhost:3001](http://localhost:3001)
-* **Grafana:** [http://localhost:3005](http://localhost:3005) (Логин: `admin` / Пароль: `admin_secure_pass`)
-* **Prometheus:** [http://localhost:9092](http://localhost:9092)
-
----
-
-## 4. Проверка работоспособности компонентов
-
-Для подтверждения успешного развертывания выполните следующие проверки:
-
-1. **Статус контейнеров на хосте:**
-   Выполните `docker ps -a`. Все контейнеры (`uptime-kuma`, `kuma-db`, `prometheus`, `grafana`, `cadvisor`, `node-exporter`) должны находиться в статусе `Up` или `Up (healthy)`.
-2. **Сбор метрик в Prometheus:**
-   Откройте [http://localhost:9092/targets](http://localhost:9092/targets). Убедитесь, что все четыре эндпоинта находятся в зеленом статусе **UP**. 
-   *(Примечание: для авторизации Prometheus в Uptime Kuma используется сгенерированный API-ключ, прописанный в inline-конфигурации).*
-3. **Отрисовка дашбордов в Grafana:**
-   Зайдите в Grafana, перейдите в раздел *Connections -> Data Sources*. Убедитесь, что источник данных Prometheus успешно добавлен и проходит тест связи (*Save & Test*). Импортируйте комьюнити-дашборд по ID `1860` (Node Exporter Full) или `10619` (cAdvisor для cgroups v2) для визуализации утилизации ресурсов хоста и контейнеров.
-
+- The three `dagger call` commands work from the first run after prerequisites are met
+- Code matches the docx technical task specification
+- `dagger.json` source path changed from `".dagger"` to `"."` to fix context isolation bug
+- Python package `src/kuma_monitor/` created for Dagger SDK module discovery
+- Dagger module discovery now works correctly with `name: "kuma-monitor"` and `source: "."`

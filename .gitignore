@@ -9,3 +9,6 @@ venv/
 # Docker volumes storage (если вдруг создались локально)
 *_data/
 .data/
+/**/__pycache__
+/sdk
+/.env

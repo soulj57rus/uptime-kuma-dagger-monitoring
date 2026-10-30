@@ -4,10 +4,9 @@
   "sdk": {
     "source": "python"
   },
-  "source": ".dagger",
   "include": [
     "app-db",
     "observability",
-    ".dagger"
+    "src"
   ]
 }
